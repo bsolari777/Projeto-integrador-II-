@@ -155,84 +155,64 @@ void carregar_mem_instr(struct memoria_instrucao mem[], int *qtd_instr){
 
 
 //carregar a memoria de dados para a struct da memoria de dados
-
 void carregar_mem_dados(struct memoria_dados data[], int *qtd_dados){
 
     char linha[256];
+    int i=0;
     FILE *f;
 
-    f = fopen("dados.dat", "r");
-
-    if (f == NULL) {
+    if((f=fopen("dados.dat", "r"))==NULL){
         printf("Erro ao abrir o arquivo...\n");
         return;
     }
 
-    int i = 0;
+    while(fgets(linha, sizeof(linha), f)!=NULL && i<256){
 
-    while (fgets(linha, sizeof(linha), f) != NULL && i < 256) {
-
-        linha[strcspn(linha, "\n")] = '\0';
-
+        linha[strcspn(linha, "\n")]='\0';
         strcpy(data[i].dados, linha);
 
         i++;
     }
 
-    *qtd_dados = i;
+    *qtd_dados=i;
 
     fclose(f);
 }
-
 
 // imprimir memorias , instrucao e dados
-
 void imprimir_memorias_instrdata(struct memoria_instrucao mem[],struct memoria_dados data[],int *qntd_instr,int *qntd_dados){
     
+    int i;
 
-    printf("----Memoria de instrução----\n");
+    printf("\n    Memória de instrução    \n");
     
-    for(int i = 0 ; i<*qntd_instr;i++){
-        
-        printf(" %dª instrução : %s\n",i+1,mem[i].bits);
-        
+    for(i=0; i<*qntd_instr; i++){
+        printf(" %dª instrução: %s\n", i+1, mem[i].bits);
     }
     
-    printf("----Memoria de dados----\n");
+    printf("    Memória de dados    \n");
     
-    for(int i = 0 ; i<*qntd_dados;i++){
-        
+    for(i=0; i<*qntd_dados; i++){
         printf(" %dº dado : %s\n",i+1,data[i].dados);
-        
     }    
-
-    
 }
 
-
 // salvar o .dat
-
 void salvardata(struct memoria_dados data[],int *qntd_dados){
     
+    int i;
     FILE *f;
-    f = fopen("dados.dat","w");
     
-    if (f == NULL) {
-    printf("Erro ao abrir arquivo para escrita\n");
-    return;
+    if((f=fopen("dados.dat", "r"))==NULL){
+        printf("Erro ao abrir arquivo para escrita.\n");
+        return;
     }
     
-    
-    
-    for(int i = 0;i<*qntd_dados;i++){    
-    
-    fprintf(f," %s",data[i].dados);
-    
-        
+    for(i=0; i<*qntd_dados; i++){    
+        fprintf(f," %s",data[i].dados);
     }
     
-    fclose(f);
-    
+    fclose(f);  
 }
 
 
