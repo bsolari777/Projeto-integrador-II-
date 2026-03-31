@@ -11,6 +11,7 @@ struct memoria_instrucao{
     char rt[5];
     char funct[5];
     char imediato[5];
+    char endereco[13];
 };
 
 struct memoria_dados{
@@ -19,17 +20,22 @@ struct memoria_dados{
     
 };
 
-
+struct sinais_controle {
+    int RegWrite;
+    int MemRead;
+    int MemWrite;
+    int ALUSrc;
+    int Jump;
+    int ALUOp;
+};
 
 void carregar_mem_instr(struct memoria_instrucao mem[],int *qntd_instr);
 void carregar_mem_dados(struct memoria_dados data[],int *qntd_dados);
 void imprimir_memorias_instrdata(struct memoria_instrucao mem[],struct memoria_dados data[],int *qntd_instr,int *qntd_dados);
-void imprimir_bancoreg();
 void salvardata(struct memoria_dados data[],int *qnt_dados);
-void pc(struct memoria_instrucao mem[],int *qntd_instr,int reg[]);
-void decodificacao(int pc,struct memoria_instrucao mem[],int reg[]);
-void tipoI(int pc, struct memoria_instrucao mem[],int reg[]);
-void bancoregistradores(int a, int b, int c, int d,int reg[]);
+void cicloinstrucao(int pc,struct memoria_instrucao mem[],int reg[],int *qntd_instr);
+void verificarTipo(int pc,struct memoria_instrucao mem[],int reg[]);
+void decodificacao_instrucao_I(int pc, struct memoria_instrucao mem[],int reg[]);
 int ULA(int a, int b,int c);
 int binario_para_int(char *bits);
 
@@ -41,7 +47,8 @@ int main() {
     int opcao,a;
     int qntd_instr=0,qntd_dados=0;
     int reg[8] = {0}; //inicializando banco de registradores
-
+    int pc = 0; //incializando o pc
+    int memoriadados[256];
     do {
 
         printf("\n---- MENU ----\n");
@@ -52,7 +59,7 @@ int main() {
         printf("5 - Imprimir todo o simulador\n");
         printf("6 - Salvar .asm\n");
         printf("7 - Salvar .dat\n");
-        printf("8 - Executar programa (run)\n");
+        printf("8 - Executar progama (run)\n");
         printf("9 - Executar uma instrucao (step)\n");
         printf("10 - Voltar uma instrucao (back)\n");
         printf("0 - Sair\n");
@@ -97,7 +104,7 @@ int main() {
 
             case 8:
                 printf("Executando programa (run)...\n");
-                pc(mem,&qntd_instr,reg);
+                cicloinstrucao(pc,mem,reg,&qntd_instr);
                 break;
 
             case 9:
@@ -126,7 +133,7 @@ int main() {
 
 void carregar_mem_instr(struct memoria_instrucao mem[], int *qtd_instr){
 
-    char linha[256];
+    char linha[17];
     FILE *f;
 
     f = fopen("instrucoes.mem", "r");
@@ -140,9 +147,10 @@ void carregar_mem_instr(struct memoria_instrucao mem[], int *qtd_instr){
 
     while (fgets(linha, sizeof(linha), f) != NULL && i < 256) {
 
+        strcpy(mem[i].bits, linha);
+
         linha[strcspn(linha, "\n")] = '\0';
 
-        strcpy(mem[i].bits, linha);
 
         i++;
     }
@@ -155,210 +163,308 @@ void carregar_mem_instr(struct memoria_instrucao mem[], int *qtd_instr){
 
 
 //carregar a memoria de dados para a struct da memoria de dados
+
 void carregar_mem_dados(struct memoria_dados data[], int *qtd_dados){
 
     char linha[256];
-    int i=0;
     FILE *f;
 
-    if((f=fopen("dados.dat", "r"))==NULL){
+    f = fopen("dados.dat", "r");
+
+    if (f == NULL) {
         printf("Erro ao abrir o arquivo...\n");
         return;
     }
 
-    while(fgets(linha, sizeof(linha), f)!=NULL && i<256){
+    int i = 0;
 
-        linha[strcspn(linha, "\n")]='\0';
+    while (fgets(linha, sizeof(linha), f) != NULL && i < 256) {
+
+        linha[strcspn(linha, "\n")] = '\0';
+
         strcpy(data[i].dados, linha);
 
         i++;
     }
 
-    *qtd_dados=i;
+    *qtd_dados = i;
 
     fclose(f);
 }
 
+
 // imprimir memorias , instrucao e dados
+
 void imprimir_memorias_instrdata(struct memoria_instrucao mem[],struct memoria_dados data[],int *qntd_instr,int *qntd_dados){
     
-    int i;
 
-    printf("\n    Memória de instrução    \n");
+    printf("----Memoria de instrução----\n");
     
-    for(i=0; i<*qntd_instr; i++){
-        printf(" %dª instrução: %s\n", i+1, mem[i].bits);
+    for(int i = 0 ; i<*qntd_instr;i++){
+        
+        printf(" %dª instrução : %s\n",i+1,mem[i].bits);
+        
     }
     
-    printf("    Memória de dados    \n");
     
-    for(i=0; i<*qntd_dados; i++){
-        printf(" %dº dado : %s\n",i+1,data[i].dados);
-    }    
-}
-
-// salvar o .dat
-void salvardata(struct memoria_dados data[],int *qntd_dados){
-    
-    int i;
-    FILE *f;
-    
-    if((f=fopen("dados.dat", "r"))==NULL){
-        printf("Erro ao abrir arquivo para escrita.\n");
-        return;
-    }
-    
-    for(i=0; i<*qntd_dados; i++){    
-        fprintf(f," %s",data[i].dados);
-    }
-    
-    fclose(f);  
 }
 
 
-//aqui vai ser o pc
+void salvarmemoriadedados(int memoria_dados[],int *qnt_dados){
+    
+    for(int i=0;i<256;i++){
+       memoria_dados[i] = 0;
+    }
+   
+}
 
 
-void pc(struct memoria_instrucao mem[],int *qntd_instr,int reg[]){
+void pc(struct memoria_instrucao mem[],int reg[],int *qntd_instr){
     
     int pc = 0;
     
     while(pc < *qntd_instr){
-    
-    decodificacao(pc, mem, reg);
-    
-    pc++;    
-    
-        
+        pc++;
+      
+        imprimir_memorias_instrdata(mem, NULL, qntd_instr, NULL);
     }
     
-
 }
 
 
-// primeiro passo de decodificacao dos bits
 
+//controle 
+void controle(int pc, struct memoria_instrucao mem[], int reg[], int *qntd_instr){
+    
+    char temp[5];
 
-void decodificacao(int pc,struct memoria_instrucao mem[],int reg[]){
-    
-    
-    char temp[4];
-    
     for(int i=0;i<4;i++){
-        
         temp[i] = mem[pc].bits[i];
-        
     }
-    
     temp[4] = '\0';
-    
+
     if(strcmp(temp,"0000")==0){
-        printf("Instrucao do tipo R\n");
+        printf("Tipo R\n");
+
+        decodificacao_instrucao_R(mem, pc);
+
+        int rs = binario_para_int(mem[pc].rs);
+        int rt = binario_para_int(mem[pc].rt);
+        int rd = binario_para_int(mem[pc].rd);
+        int funct = binario_para_int(mem[pc].funct);
+
+        reg[rd] = ULA(funct, reg[rs], reg[rt]);
     }
-    else if(strcmp(temp,"0100")==0){
-        printf("Instrucao do tipo J\n");
+    else if(strcmp(temp,"1000")==0){
+        printf("Tipo J\n");
+
+        decodificacao_instrucao_J(mem, pc, qntd_instr);
+        pc=binario_para_int(mem[pc].endereco);
     }
     else{
-        printf("Instrucao do tipo I\n");
-        tipoI(pc,mem,reg);
+        printf("Tipo I\n");
+
+        decodificacao_instrucao_I(pc, mem, reg);
     }
-
-
-}
-
-//divide os bits para a configuração do tipo I
-
-void tipoI(int pc, struct memoria_instrucao mem[],int reg[]){
-    
-    // opcode
-    for(int i=0;i<4;i++){
-    mem[pc].opcode[i] = mem[pc].bits[i];
-    mem[pc].opcode[4] = '\0'; // importante!
-    }
-    
-    // rs
-    for(int i=0;i<4;i++){ 
-    mem[pc].rs[i] = mem[pc].bits[4+i];
-    mem[pc].rs[4] = '\0';
-    }
-    
-    // rt
-    for(int i=0;i<4;i++){ 
-    mem[pc].rt[i] = mem[pc].bits[8+i];
-    mem[pc].rt[4] = '\0';
-    }
-    
-    // imediato
-    for(int i=0;i<4;i++){ 
-    mem[pc].imediato[i] = mem[pc].bits[12+i];
-    mem[pc].imediato[4] = '\0';
-    }
-    
-    // agora converte para decimal
-    int a = binario_para_int(mem[pc].opcode);//opcode
-    int b = binario_para_int(mem[pc].rs);//rs
-    int c = binario_para_int(mem[pc].rt);//rt
-    int d = binario_para_int(mem[pc].imediato);//imediato
-
-    printf("opcode=%d rs=%d rt=%d rd=%d\n", a, b, c, d);
-
-    bancoregistradores(a,b,c,d,reg);
-    
 }
 
 
 
-void bancoregistradores(int a, int b, int c, int d,int reg[]){
-    
-    reg[c] = ULA(a, b, d);
-    printf("R%d = %d\n", c, reg[c]); // opcional, debug
-        
-    
-}
+int ULA(int a, int b, int c){
 
+    int resultado = 0;
 
-int ULA(int a, int b,int c){
-    
-    int resultado;
-    
     switch(a){
+        case 0: resultado = b + c;
+        break;
         
-    case 1:
-    
-    resultado = b + c;
-    
-    break;
-    
-    case 2:
-    
-    resultado = b - c;
-    
-    break;
-    
-    default:
-    
-    printf("operação invalida!!!!");
-    
-    break;
-    
+        case 2: resultado = b - c;
+        break;
+        
+        case 4: resultado = b & c;
+        break;
+        
+        case 5: resultado = b | c;
+        break;
+
+
+        default:
+            printf("Operacao invalida\n");
+            break;
     }
-    
+
+    if (resultado > 127 || resultado < -128){
+        printf("OVERFLOW\n");
+    }
+
     return resultado;
-    
 }
 
-//transforma binario para inteiro 
+ 
 
 int binario_para_int(char *bits) {
     
     int valor = 0;
-    for(int i=0; bits[i] != '\0'; i++) {
-        if(bits[i] == '1') valor = valor*2 + 1;
-        else if(bits[i] == '0') valor = valor*2;
-        else {
-            printf("Erro: caractere invalido\n");
-            return -1;
+    int tamanho = strlen(bits);
+
+    // verifica se é negativo (bit mais significativo)
+    int negativo = (bits[0] == '1');
+
+    for(int i = 0; i < tamanho; i++){
+        valor = valor * 2 + (bits[i] - '0');
+    }
+
+    // se for negativo, aplica complemento de dois
+    if(negativo){
+        valor -= (1 << tamanho); 
+    }
+
+    return valor;
+}
+
+
+void carregarbancoreg(int reg[]){
+    int quantos, valor, indice;
+
+    printf("quantos registradores deseja carregar?\n");
+    scanf("%d", &quantos);
+
+    for(int i = 0; i < quantos; i++){
+
+        printf("qual registrador voce deseja carregar?\n");
+        scanf("%d", &indice);
+
+        printf("qual valor?\n");
+        scanf("%d", &valor);
+
+        reg[indice] = valor;
+    }
+}
+
+
+
+
+        // decodificação 
+
+void decodificao_instrucao_I(int pc, struct memoria_instrucao mem[], int reg[], int memoriadados[]){
+
+    // opcode
+    for(int i=0;i<4;i++){
+        mem[pc].opcode[i] = mem[pc].bits[i];
+    }
+    mem[pc].opcode[4] = '\0';
+    
+    // rs
+    for(int i=0;i<4;i++){ 
+        mem[pc].rs[i] = mem[pc].bits[4+i];
+    }
+    mem[pc].rs[4] = '\0';
+    
+    // rt
+    for(int i=0;i<4;i++){ 
+        mem[pc].rt[i] = mem[pc].bits[8+i];
+    }
+    mem[pc].rt[4] = '\0';
+    
+    // imediato
+    for(int i=0;i<4;i++){ 
+        mem[pc].imediato[i] = mem[pc].bits[12+i];
+    }
+    mem[pc].imediato[4] = '\0';
+    
+    // conversão
+    int opcode = binario_para_int(mem[pc].opcode);
+    int rs = binario_para_int(mem[pc].rs);
+    int rt = binario_para_int(mem[pc].rt);
+    int imediato = binario_para_int(mem[pc].imediato);
+
+    printf("opcode=%d rs=%d rt=%d im=%d\n", opcode, rs, rt, imediato);
+
+    // ADDI (ou operações normais)
+    if(opcode != 11 && opcode != 15){
+        reg[rt] = ULA(opcode, reg[rs], imediato);
+    }
+
+    // lw
+    else if(opcode == 11){
+
+        int endereco = reg[rs] + imediato;
+
+        if(endereco >= 0 && endereco < 256){
+            reg[rt] = memoriadados[endereco];
+            printf("LW: R%d = memoria[%d] (%d)\n", rt, endereco, reg[rt]);
+        } else {
+            printf("Erro de memoria (lw)\n");
         }
     }
-    return valor;
+
+    // sw
+    else if(opcode == 15){
+
+        int endereco = reg[rs] + imediato;
+
+        if(endereco >= 0 && endereco < 256){
+            memoriadados[endereco] = reg[rt];
+            printf("SW: memoria[%d] = %d\n", endereco, reg[rt]);
+        } else {
+            printf("Erro de memoria (sw)\n");
+        }
+    }
+}
+
+
+void decodificacao_instrucao_R(struct memoria_instrucao mem[],int pc){
+  // opcode
+for(int i=0;i<4;i++){
+mem[pc].opcode[i] = mem[pc].bits[i];
+}
+mem[pc].opcode[4] = '\0';
+
+// rs
+for(int i=0;i<3;i++){ 
+mem[pc].rs[i] = mem[pc].bits[4+i];
+}
+mem[pc].rs[3] = '\0';
+
+// rt
+for(int i=0;i<3;i++){ 
+mem[pc].rt[i] = mem[pc].bits[7+i];
+}
+mem[pc].rt[3] = '\0';
+
+// rd 
+for(int i=0;i<3;i++){ 
+    mem[pc].rd[i] = mem[pc].bits[10+i];
+}
+mem[pc].rd[3] = '\0';
+
+// funct 
+for(int i=0;i<3;i++){
+    mem[pc].funct[i] = mem[pc].bits[13+i];
+}
+mem[pc].funct[3] = '\0';
+}
+
+
+
+void decodificacao_instrucao_J(struct memoria_instrucao mem[],int pc, int *qtd_instr){
+  // opcode
+  for(int i=0;i<4;i++){
+    mem[pc].opcode[i] = mem[pc].bits[i];
+  }
+  mem[pc].opcode[4] = '\0';
+
+  // endereco
+  for(int i=0;i<12;i++){
+    mem[pc].endereco[i] = mem[pc].bits[4+i];
+  
+if(mem[pc].endereco >= *qtd_instr){
+    printf("Endereco de salto invalido\n");
+    return;
+  }
+
+}
+  mem[pc].endereco[12] = '\0';
+
+
 }
