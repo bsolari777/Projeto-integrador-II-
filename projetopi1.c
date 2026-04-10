@@ -1,470 +1,655 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+ 
+// Struct para armazenar instruções em binário (16 bits + '\0')
 struct memoria_instrucao{
-
-    char bits[17]; // aqui é carregado os bits que vem do .mem
-    char opcode[5]; //depois colocado em seus respectivos lugares 
-    char rs[5];
-    char rd[5]; 
-    char rt[5];
-    char funct[5];
-    char imediato[5];
-    char endereco[13];
+    char bits[17];
 };
-
+ 
+// Struct para armazenar memoria de dados em binário (16 bits + '\0')
 struct memoria_dados{
-    
-  char dados[17];
-    
+    char dados[17];
+};
+ 
+// Struct para armazenar o estado da CPU/memória em cada passo
+struct estado{
+    int reg[8];        
+    int memdados[256]; 
+    int pc;            
 };
 
-struct sinais_controle {
-    int RegWrite;
-    int MemRead;
-    int MemWrite;
-    int ALUSrc;
-    int Jump;
-    int ALUOp;
-};
+// Struct para armazenar o estado da ULA
 
-void carregar_mem_instr(struct memoria_instrucao mem[],int *qntd_instr);
-void carregar_mem_dados(struct memoria_dados data[],int *qntd_dados);
-void imprimir_memorias_instrdata(struct memoria_instrucao mem[],struct memoria_dados data[],int *qntd_instr,int *qntd_dados);
-void salvardata(struct memoria_dados data[],int *qnt_dados);
-void cicloinstrucao(int pc,struct memoria_instrucao mem[],int reg[],int *qntd_instr);
-void verificarTipo(int pc,struct memoria_instrucao mem[],int reg[]);
-void decodificacao_instrucao_I(int pc, struct memoria_instrucao mem[],int reg[]);
-int ULA(int a, int b,int c);
+struct resultado_ula {
+    int resultado;
+    int zero;
+    int overflow;
+    int negativo;
+};
+ 
+// assinatura das funções a serem utilizadas no código
+void executarinstrucao(struct memoria_instrucao mem[], int contador, int reg[], int memdados[], int *pc);
+void executarstep(struct memoria_instrucao mem[], int qtd_instr, int reg[], int memdados[], int *pc, struct estado historico[], int *topo);
+void executarback(int reg[], int memdados[], int *pc, struct estado historico[], int *topo);
 int binario_para_int(char *bits);
+void ULA(int funct, int a, int b, struct resultado_ula *r);
+void carregar_mem_instr(struct memoria_instrucao mem[], int *qtd_instr);
+void carregar_mem_dados(struct memoria_dados data[], int *qtd_dados);
+void imprimir_memorias(struct memoria_instrucao mem[], struct memoria_dados data[], int qtd_instr, int qtd_dados);
+void imprimir_tudo(struct memoria_instrucao mem[], int qtd_instr, int memdados[], int reg[], int pc);
+void salvar_dat(int memdados[], int tamanho);
+void salvar_asm(struct memoria_instrucao mem[], int qtd_instr);
+void inserir_memoria(int memdados[]);
+void inserir_registrador(int reg[]);
 
 
-int main() {
-
-    struct memoria_instrucao mem[256];
-    struct memoria_dados data[256];
-    int opcao,a;
-    int qntd_instr=0,qntd_dados=0;
-    int reg[8] = {0}; //inicializando banco de registradores
-    int pc = 0; //incializando o pc
-    int memoriadados[256];
-    do {
-
+int main(){
+ 
+    struct memoria_instrucao mem[256]; // Memória de instruções
+    struct memoria_dados data[256];    // Memória de dados
+ 
+    int reg[8] = {10,10,10,10,10,10,10,10}; 
+    int memdados[256] = {0};                
+ 
+    struct estado historico[1000]; 
+    int topo = -1;                  
+ 
+    int pc = 0,pc_executar;          // Program counter inicial
+    int qtd_instr = 0;   // Quantidade de instruções carregadas
+    int qtd_dados = 0;   // Quantidade de dados carregados
+    int opcao;           // Opção do menu
+ 
+    do{
         printf("\n---- MENU ----\n");
-        printf("1 - Carregar memoria de instrucoes (.mem)\n");
-        printf("2 - Carregar memoria de dados (.dat)\n");
-        printf("3 - Imprimir memorias (instrucoes e dados)\n");
-        printf("4 - Imprimir banco de registradores\n");
-        printf("5 - Imprimir todo o simulador\n");
+        printf("1 - Carregar memoria de instrucoes\n");
+        printf("2 - Carregar memoria de dados\n");
+        printf("3 - Imprimir memorias\n");
+        printf("4 - Imprimir registradores\n");
+        printf("5 - Imprimir todo simulador\n");
         printf("6 - Salvar .asm\n");
         printf("7 - Salvar .dat\n");
-        printf("8 - Executar progama (run)\n");
-        printf("9 - Executar uma instrucao (step)\n");
-        printf("10 - Voltar uma instrucao (back)\n");
+        printf("8 - Executar programa (run)\n");
+        printf("9 - Step\n");
+        printf("10 - Back\n");
+        printf("11 - Inserir valor em registrador\n");
+        printf("12 - Inserir valor na memoria de dados\n");
         printf("0 - Sair\n");
-        printf("Escolha uma opcao: ");
+        printf("Opcao: ");
         scanf("%d", &opcao);
-
-        switch (opcao) {
-            case 1:
-                printf("Carregando memoria de instrução...\n");
-                carregar_mem_instr(mem,&qntd_instr);
+ 
+        switch(opcao){
+ 
+            case 1: 
+                carregar_mem_instr(mem, &qtd_instr); // Carrega instruções
                 break;
-
-            case 2:
-                printf("Carregando memoria de dados...\n");
-                carregar_mem_dados(data,&qntd_dados);
+            
+            case 2: 
+                carregar_mem_dados(data, &qtd_dados); // Carrega dados
+                for(int i = 0; i < qtd_dados; i++){
+                memdados[i] = binario_para_int(data[i].dados);
+                }
                 break;
-
+            
             case 3:
-                printf("Imprimindo memorias......\n");
-                imprimir_memorias_instrdata(mem,data,&qntd_instr,&qntd_dados);
+                imprimir_memorias(mem, data, qtd_instr, qtd_dados); // Mostra memórias
                 break;
-
+ 
             case 4:
-                 printf("---- Banco de Registradores ----\n");
-                 for(int i=0;i<8;i++){
-                 printf("R%d = %d\n", i, reg[i]); 
-                 }
-                 break;
-
-            case 5:
-                printf("Opcao 5 selecionada\n");
+                printf("\n---- REGISTRADORES ----\n");
+                for(int i=0;i<8;i++)
+                    printf("R%d = %d\n", i, reg[i]); // Mostra registradores
                 break;
-
-            case 6:
-                printf("Opcao 6 selecionada\n");
-                break;
-
-            case 7:
-                printf("Salvando .dat.......\n");
-                salvardata(data,&qntd_dados);
-                break;
-
+			case 5:
+			imprimir_tudo(mem, qtd_instr, memdados, reg, pc);
+			break;
+			
+			
+			case 6:
+				salvar_asm(mem, qtd_instr);
+				break;
+			
+			case 7:
+			salvar_dat(memdados,256);
+			break;
+ 
             case 8:
-                printf("Executando programa (run)...\n");
-                cicloinstrucao(pc,mem,reg,&qntd_instr);
+                pc_executar = pc - pc;
+                executarinstrucao(mem, 256, reg, memdados, &pc_executar); // Executa programa todo
                 break;
-
+ 
             case 9:
-                printf("Executando uma instrucao (step)...\n");
+                executarstep(mem, qtd_instr, reg, memdados, &pc, historico, &topo); // Executa uma instrução (step)
                 break;
-
+ 
             case 10:
-                printf("Voltando uma instrucao (back)...\n");
+                executarback(reg, memdados, &pc, historico, &topo); // Volta instrução (back)
                 break;
+            case 11:
+                inserir_registrador(reg);
+            break;
 
+            case 12:
+                inserir_memoria(memdados);
+            break;
             case 0:
-                printf("Encerrando programa......\n");
+                printf("Saindo...\n"); // Encerra programa
                 break;
-
+ 
             default:
-                printf("Opcao invalida, tente novamente.\n");
+                printf("Opcao nao implementada\n"); // Opção inválida
         }
-
-    } while (opcao != 0);
-
+ 
+    }while(opcao != 0);
+ 
     return 0;
 }
-
-
-//carregar a memoria de instruçoes pra struct de memoria de instrucoes
-
-void carregar_mem_instr(struct memoria_instrucao mem[], int *qtd_instr){
-
-    char linha[17];
-    FILE *f;
-
-    f = fopen("instrucoes.mem", "r");
-
-    if (f == NULL) {
-        printf("Erro ao abrir o arquivo...\n");
-        return;
-    }
-
-    int i = 0;
-
-    while (fgets(linha, sizeof(linha), f) != NULL && i < 256) {
-
-        strcpy(mem[i].bits, linha);
-
-        linha[strcspn(linha, "\n")] = '\0';
-
-
-        i++;
-    }
-
-    *qtd_instr = i;
-
-    fclose(f);
-}
-
-
-
-//carregar a memoria de dados para a struct da memoria de dados
-
-void carregar_mem_dados(struct memoria_dados data[], int *qtd_dados){
-
-    char linha[256];
-    FILE *f;
-
-    f = fopen("dados.dat", "r");
-
-    if (f == NULL) {
-        printf("Erro ao abrir o arquivo...\n");
-        return;
-    }
-
-    int i = 0;
-
-    while (fgets(linha, sizeof(linha), f) != NULL && i < 256) {
-
-        linha[strcspn(linha, "\n")] = '\0';
-
-        strcpy(data[i].dados, linha);
-
-        i++;
-    }
-
-    *qtd_dados = i;
-
-    fclose(f);
-}
-
-
-// imprimir memorias , instrucao e dados
-
-void imprimir_memorias_instrdata(struct memoria_instrucao mem[],struct memoria_dados data[],int *qntd_instr,int *qntd_dados){
-    
-
-    printf("----Memoria de instrução----\n");
-    
-    for(int i = 0 ; i<*qntd_instr;i++){
+ 
+void executarinstrucao(struct memoria_instrucao mem[], int contador, int reg[], int memdados[], int *pc){
+ 
+    struct resultado_ula r;
+ 
+    while(*pc < contador){ 
+ 
+        char *instr = mem[*pc].bits;  
         
-        printf(" %dª instrução : %s\n",i+1,mem[i].bits);
+        if(strcmp(instr, "0") == 0){
+            (*pc)++;
+            continue;
+        }        
         
-    }
-    
-    
-}
-
-
-void salvarmemoriadedados(int memoria_dados[],int *qnt_dados){
-    
-    for(int i=0;i<256;i++){
-       memoria_dados[i] = 0;
-    }
-   
-}
-
-
-void pc(struct memoria_instrucao mem[],int reg[],int *qntd_instr){
-    
-    int pc = 0;
-    
-    while(pc < *qntd_instr){
-        pc++;
-      
-        imprimir_memorias_instrdata(mem, NULL, qntd_instr, NULL);
-    }
-    
-}
-
-
-
-//controle 
-void controle(int pc, struct memoria_instrucao mem[], int reg[], int *qntd_instr){
-    
-    char temp[5];
-
-    for(int i=0;i<4;i++){
-        temp[i] = mem[pc].bits[i];
-    }
-    temp[4] = '\0';
-
-    if(strcmp(temp,"0000")==0){
-        printf("Tipo R\n");
-
-        decodificacao_instrucao_R(mem, pc);
-
-        int rs = binario_para_int(mem[pc].rs);
-        int rt = binario_para_int(mem[pc].rt);
-        int rd = binario_para_int(mem[pc].rd);
-        int funct = binario_para_int(mem[pc].funct);
-
-        reg[rd] = ULA(funct, reg[rs], reg[rt]);
-    }
-    else if(strcmp(temp,"1000")==0){
-        printf("Tipo J\n");
-
-        decodificacao_instrucao_J(mem, pc, qntd_instr);
-        pc=binario_para_int(mem[pc].endereco);
-    }
-    else{
-        printf("Tipo I\n");
-
-        decodificacao_instrucao_I(pc, mem, reg);
-    }
-}
-
-
-
-int ULA(int a, int b, int c){
-
-    int resultado = 0;
-
-    switch(a){
-        case 0: resultado = b + c;
-        break;
+        char opcode1[5];
+        strncpy(opcode1, instr, 4); 
+        opcode1[4] = '\0';
         
-        case 2: resultado = b - c;
-        break;
-        
-        case 4: resultado = b & c;
-        break;
-        
-        case 5: resultado = b | c;
-        break;
-
-
-        default:
-            printf("Operacao invalida\n");
-            break;
-    }
-
-    if (resultado > 127 || resultado < -128){
-        printf("OVERFLOW\n");
-    }
-
-    return resultado;
-}
-
+        int opcode2 = binario_para_int(opcode1); 
+ 
+        printf("\ninstrucao do pc = %d | %s\n", *pc, instr);
+ 
+        // -------- TIPO R --------
+        // opcode 0000 = 0
+        if(opcode2 == 0){
+            char rs1[4], rt1[4], rd1[4], funct1[4];
+ 
+            strncpy(rs1,   instr+4, 3); rs1[3]   = '\0';
+            strncpy(rt1,   instr+7, 3); rt1[3]   = '\0';
+            strncpy(rd1,   instr+10, 3); rd1[3]  = '\0';
+            strncpy(funct1, instr+13, 3); funct1[3] = '\0';
+ 
+            int rs2    = binario_para_int(rs1);
+            int rt2    = binario_para_int(rt1);
+            int rd2    = binario_para_int(rd1);
+            int funct2 = binario_para_int(funct1);
+ 
+            // funct: 000=ADD, 010=SUB, 100=AND, 101=OR
+            // mapeamento para ULA: 0=add, 1=sub, 2=and, 3=or
+            int ula_op;
+            if(funct2 == 0)      ula_op = 0; // ADD
+            else if(funct2 == 2) ula_op = 1; // SUB
+            else if(funct2 == 4) ula_op = 2; // AND
+            else if(funct2 == 5) ula_op = 3; // OR
+            else                 ula_op = 0; // default
  
 
-int binario_para_int(char *bits) {
-    
+            ULA(ula_op, reg[rs2], reg[rt2], &r);
+            reg[rd2] = r.resultado;
+        
+            
+        }
+ 
+        // -------- TIPO I --------
+        // opcodes conforme tabela do PDF:
+        //   0100 (4)  = ADDI
+        //   1011 (11) = LW
+        //   1111 (15) = SW
+        //   1000 (8)  = BEQ
+      else if(opcode2 == 4 || opcode2 == 11 || opcode2 == 15 || opcode2 == 8){
+
+    char rs1[4], rt1[4], imediato1[7];
+
+    strncpy(rs1, instr+4, 3); rs1[3] = '\0';
+    strncpy(rt1, instr+7, 3); rt1[3] = '\0';
+    strncpy(imediato1, instr+10, 6); imediato1[6] = '\0';
+
+    int rs2 = binario_para_int(rs1);
+    int rt2 = binario_para_int(rt1);
+    int imediato2 = binario_para_int(imediato1);
+
+    int addr;
+
+    if(opcode2 == 4){
+        ULA(0, reg[rs2], imediato2, &r);
+        reg[rt2] = r.resultado;
+    }
+
+    else if(opcode2 == 11){
+        ULA(0, reg[rs2], imediato2, &r);
+        addr = r.resultado;
+
+        if(addr >= 0 && addr < 256)
+            reg[rt2] = memdados[addr];
+    }
+
+    else if(opcode2 == 15){
+        ULA(0, reg[rs2], imediato2, &r);
+        addr = r.resultado;
+
+        if(addr >= 0 && addr < 256)
+            memdados[addr] = reg[rt2];
+    }
+
+    else if(opcode2 == 8){
+        ULA(1, reg[rs2], reg[rt2], &r);
+
+        if(r.zero == 1){
+            *pc = *pc + imediato2 - 1;
+        }
+    }
+}
+ 
+        // -------- TIPO J --------
+        // opcode 0010 (2) = JUMP
+        else if(opcode2 == 2){
+            char addr_s[13];
+            strncpy(addr_s, instr+4, 12); // 12 bits de endereço
+            addr_s[12] = '\0';
+ 
+            // Para Jump, o endereço é sempre positivo (0-255)
+            // usamos conversão sem sinal (os 8 bits menos significativos)
+            int addr = 0;
+            int tamanho = strlen(addr_s);
+            for(int i = 0; i < tamanho; i++){
+                addr = addr * 2 + (addr_s[i] == '1' ? 1 : 0);
+            }
+ 
+            *pc = addr - 1; // -1 porque o (*pc)++ vai incrementar depois
+        }
+ 
+        else {
+            printf("instrucao invalida! opcode = %d\n", opcode2); 
+        }
+ 
+        (*pc)++; 
+    }
+}
+ 
+// ----------- executar instrucao uma de cada vez -----------
+void executarstep(struct memoria_instrucao mem[], int qtd_instr, int reg[], int memdados[], int *pc, struct estado historico[], int *topo){
+ 
+    if(*pc >= qtd_instr){ 
+        printf("Fim do programa\n");
+        return;
+    }
+ 
+    if(*topo >= 999){ // Limite do histórico
+        printf("Limite do historico atingido\n");
+        return;
+    }
+ 
+    (*topo)++; // Avança topo do histórico
+ 
+    historico[*topo].pc = *pc; // Salva PC atual
+ 
+    for(int i=0;i<8;i++)
+        historico[*topo].reg[i] = reg[i]; // Salva registradores
+ 
+    for(int i=0;i<256;i++)
+        historico[*topo].memdados[i] = memdados[i]; // Salva memória de dados
+ 
+    executarinstrucao(mem, *pc + 1, reg, memdados, pc); // Executa próxima instrução
+}
+ 
+// 			voltar instrucao executada 
+void executarback(int reg[], int memdados[], int *pc, struct estado historico[], int *topo){
+ 
+    if(*topo < 0){ 
+        printf("Não tem ninuhma instrucao para voltar\n");
+        return;
+    }
+ 
+    *pc = historico[*topo].pc; // Recupera PC do histórico
+ 
+    for(int i=0;i<8;i++)
+        reg[i] = historico[*topo].reg[i]; // Recupera registradores
+ 
+    for(int i=0;i<256;i++)
+        memdados[i] = historico[*topo].memdados[i]; // Recupera memória de dados
+ 
+    (*topo)--; // Diminui topo do histórico
+ 
+    printf("Voltou para PC = %d\n", *pc);
+}
+ 
+// ----------- ULA -----------
+void ULA(int funct, int a, int b, struct resultado_ula *r){
+
+    int resultado;
+
+    switch(funct){
+        case 0:
+            resultado = a + b;
+            r->overflow = ((a > 0 && b > 0 && resultado < 0) ||
+                           (a < 0 && b < 0 && resultado > 0));
+            break;
+
+        case 1:
+            resultado = a - b;
+            r->overflow = ((a > 0 && b < 0 && resultado < 0) ||
+                           (a < 0 && b > 0 && resultado > 0));
+            break;
+
+        case 2:
+            resultado = a & b;
+            r->overflow = 0;
+            break;
+
+        case 3:
+            resultado = a | b;
+            r->overflow = 0;
+            break;
+
+        default:
+            resultado = 0;
+            r->overflow = 0;
+    }
+
+    r->resultado = resultado;
+    r->zero = (resultado == 0);
+    r->negativo = (resultado < 0);
+}
+ 
+int binario_para_int(char *bits){
+ 
     int valor = 0;
     int tamanho = strlen(bits);
-
-    // verifica se é negativo (bit mais significativo)
-    int negativo = (bits[0] == '1');
-
+    int negativo = 0;
+    
+    // Verifica se é negativo (bit mais significativo = 1)
+    if(bits[0] == '1'){
+        negativo = 1;
+    }
+ 
     for(int i = 0; i < tamanho; i++){
-        valor = valor * 2 + (bits[i] - '0');
+        
+        if(bits[i] == '1'){
+            valor = valor * 2 + 1;  // adiciona 1
+        }else{
+            valor = valor * 2;      // adiciona 0
+        }
     }
-
-    // se for negativo, aplica complemento de dois
-    if(negativo){
-        valor -= (1 << tamanho); 
+    
+    // Ajuste para número negativo (complemento de 2)
+    if(negativo == 1){
+        valor = valor - (1 << tamanho);
     }
-
+    
     return valor;
 }
-
-
-void carregarbancoreg(int reg[]){
-    int quantos, valor, indice;
-
-    printf("quantos registradores deseja carregar?\n");
-    scanf("%d", &quantos);
-
-    for(int i = 0; i < quantos; i++){
-
-        printf("qual registrador voce deseja carregar?\n");
-        scanf("%d", &indice);
-
-        printf("qual valor?\n");
-        scanf("%d", &valor);
-
-        reg[indice] = valor;
+ 
+void carregar_mem_instr(struct memoria_instrucao mem[], int *qtd_instr){
+ 
+    char nome_arquivo[100];
+ 
+    printf("digite o nome do arquivo de instrucoes (ex: instrucoes.mem): \n");
+    getchar();
+    fgets(nome_arquivo, sizeof(nome_arquivo), stdin);
+    nome_arquivo[strcspn(nome_arquivo, "\n")] = '\0';
+ 
+    FILE *f = fopen(nome_arquivo, "r"); 
+    char linha[20];
+ 
+    if(f==NULL){ 
+        printf("Erro ao abrir arquivo\n");
+        return;
     }
-}
-
-
-
-
-        // decodificação 
-
-void decodificao_instrucao_I(int pc, struct memoria_instrucao mem[], int reg[], int memoriadados[]){
-
-    // opcode
-    for(int i=0;i<4;i++){
-        mem[pc].opcode[i] = mem[pc].bits[i];
+ 
+ 
+   for(int i = 0; i < 256; i++){
+        strcpy(mem[i].bits, "0\0");
     }
-    mem[pc].opcode[4] = '\0';
     
-    // rs
-    for(int i=0;i<4;i++){ 
-        mem[pc].rs[i] = mem[pc].bits[4+i];
+    int i=0;
+    while(fgets(linha, sizeof(linha), f) && i<256){ // Lê linha por linha
+        linha[strcspn(linha,"\n")] = '\0'; // Remove '\n'
+        strcpy(mem[i].bits, linha);        // Salva na memória
+        i++;
     }
-    mem[pc].rs[4] = '\0';
-    
-    // rt
-    for(int i=0;i<4;i++){ 
-        mem[pc].rt[i] = mem[pc].bits[8+i];
-    }
-    mem[pc].rt[4] = '\0';
-    
-    // imediato
-    for(int i=0;i<4;i++){ 
-        mem[pc].imediato[i] = mem[pc].bits[12+i];
-    }
-    mem[pc].imediato[4] = '\0';
-    
-    // conversão
-    int opcode = binario_para_int(mem[pc].opcode);
-    int rs = binario_para_int(mem[pc].rs);
-    int rt = binario_para_int(mem[pc].rt);
-    int imediato = binario_para_int(mem[pc].imediato);
-
-    printf("opcode=%d rs=%d rt=%d im=%d\n", opcode, rs, rt, imediato);
-
-    // ADDI (ou operações normais)
-    if(opcode != 11 && opcode != 15){
-        reg[rt] = ULA(opcode, reg[rs], imediato);
-    }
-
-    // lw
-    else if(opcode == 11){
-
-        int endereco = reg[rs] + imediato;
-
-        if(endereco >= 0 && endereco < 256){
-            reg[rt] = memoriadados[endereco];
-            printf("LW: R%d = memoria[%d] (%d)\n", rt, endereco, reg[rt]);
-        } else {
-            printf("Erro de memoria (lw)\n");
-        }
-    }
-
-    // sw
-    else if(opcode == 15){
-
-        int endereco = reg[rs] + imediato;
-
-        if(endereco >= 0 && endereco < 256){
-            memoriadados[endereco] = reg[rt];
-            printf("SW: memoria[%d] = %d\n", endereco, reg[rt]);
-        } else {
-            printf("Erro de memoria (sw)\n");
-        }
-    }
+ 
+    *qtd_instr = i; // Atualiza quantidade de instruções
+    fclose(f);      // Fecha arquivo
 }
-
-
-void decodificacao_instrucao_R(struct memoria_instrucao mem[],int pc){
-  // opcode
-for(int i=0;i<4;i++){
-mem[pc].opcode[i] = mem[pc].bits[i];
-}
-mem[pc].opcode[4] = '\0';
-
-// rs
-for(int i=0;i<3;i++){ 
-mem[pc].rs[i] = mem[pc].bits[4+i];
-}
-mem[pc].rs[3] = '\0';
-
-// rt
-for(int i=0;i<3;i++){ 
-mem[pc].rt[i] = mem[pc].bits[7+i];
-}
-mem[pc].rt[3] = '\0';
-
-// rd 
-for(int i=0;i<3;i++){ 
-    mem[pc].rd[i] = mem[pc].bits[10+i];
-}
-mem[pc].rd[3] = '\0';
-
-// funct 
-for(int i=0;i<3;i++){
-    mem[pc].funct[i] = mem[pc].bits[13+i];
-}
-mem[pc].funct[3] = '\0';
-}
-
-
-
-void decodificacao_instrucao_J(struct memoria_instrucao mem[],int pc, int *qtd_instr){
-  // opcode
-  for(int i=0;i<4;i++){
-    mem[pc].opcode[i] = mem[pc].bits[i];
-  }
-  mem[pc].opcode[4] = '\0';
-
-  // endereco
-  for(int i=0;i<12;i++){
-    mem[pc].endereco[i] = mem[pc].bits[4+i];
+ 
+// ----------- CARREGAR DADOS -----------
+void carregar_mem_dados(struct memoria_dados data[], int *qtd_dados){
+ 
+    char nome_arquivo[100];
+ 
+    printf("digite o nome do arquivo de dados (ex: dados.dat): \n");
+    getchar();
+    fgets(nome_arquivo, sizeof(nome_arquivo), stdin);
+    nome_arquivo[strcspn(nome_arquivo, "\n")] = '\0';  
   
-if(mem[pc].endereco >= *qtd_instr){
-    printf("Endereco de salto invalido\n");
-    return;
-  }
-
+  
+  
+    FILE *f = fopen(nome_arquivo, "r"); // Abre arquivo de dados
+    char linha[20];
+ 
+    if(f==NULL){ // Verifica erro
+        printf("Erro ao abrir arquivo\n");
+        return;
+    }
+ 
+ 
+    for(int i = 0; i < 256; i++){
+        strcpy(data[i].dados, "0\0");
+    }
+ 
+    int i=0;
+    while(fgets(linha, sizeof(linha), f) && i<256){ // Lê linha por linha
+        linha[strcspn(linha,"\n")] = '\0'; // Remove '\n'
+        strcpy(data[i].dados, linha);      // Salva na memória
+        i++;
+    }
+ 
+    *qtd_dados = i; // Atualiza quantidade de dados
+    fclose(f);      // Fecha arquivo
 }
-  mem[pc].endereco[12] = '\0';
+ 
+// ----------- PRINT MEMORIAS -----------
+void imprimir_memorias(struct memoria_instrucao mem[], struct memoria_dados data[], int qtd_instr, int qtd_dados){
+ 
+    printf("\n---- INSTRUCOES ----\n");
+    for(int i=0;i<256;i++)
+        printf("%d: %s\n", i, mem[i].bits); // Mostra instruções
+ 
+    printf("\n---- DADOS ----\n");
+    for(int i=0;i<256;i++)
+        printf("%d: %s\n", i, data[i].dados); // Mostra dados
+}
+ 
+ 
+ 
+void salvar_asm(struct memoria_instrucao mem[], int qtd_instr){
+ 
+    char nome_arquivo[100];
+ 
+    printf("digite o nome do arquivo de saida de .asm (ex: instrucoes.asm): \n");
+    getchar();
+    fgets(nome_arquivo, sizeof(nome_arquivo), stdin);
+    nome_arquivo[strcspn(nome_arquivo, "\n")] = '\0';
+ 
+    FILE *f = fopen(nome_arquivo, "w");
+ 
+    for(int i=0; i<qtd_instr; i++){
+       
+        char *instr = mem[i].bits;
+ 
+        char opcode1[5];
+        strncpy(opcode1, instr, 4);
+        opcode1[4] = '\0';
+ 
+        int opcode2 = binario_para_int(opcode1);
+ 
+        // -------- TIPO R --------
+        // opcode 0000 (0): ADD, SUB, AND, OR — diferenciados pelo funct
+        if(opcode2 == 0){
+ 
+            char rs1[4], rt1[4], rd1[4], funct1[4];
+ 
+            strncpy(rs1,    instr+4,  3); rs1[3]    = '\0';
+            strncpy(rt1,    instr+7,  3); rt1[3]    = '\0';
+            strncpy(rd1,    instr+10, 3); rd1[3]    = '\0';
+            strncpy(funct1, instr+13, 3); funct1[3] = '\0';
+ 
+            int rs2    = binario_para_int(rs1);
+            int rt2    = binario_para_int(rt1);
+            int rd2    = binario_para_int(rd1);
+            int funct2 = binario_para_int(funct1);
+ 
+            // funct: 000=ADD, 010=SUB, 100=AND, 101=OR
+            if(funct2 == 0)
+                fprintf(f, "add $t%d, $t%d, $t%d\n", rd2, rs2, rt2);
+            else if(funct2 == 2)
+                fprintf(f, "sub $t%d, $t%d, $t%d\n", rd2, rs2, rt2);
+            else if(funct2 == 4)
+                fprintf(f, "and $t%d, $t%d, $t%d\n", rd2, rs2, rt2);
+            else if(funct2 == 5)
+                fprintf(f, "or $t%d, $t%d, $t%d\n",  rd2, rs2, rt2);
+            else
+                fprintf(f, "instrucao_invalida\n");
+        }
+ 
+        // -------- TIPO I --------
+        // opcodes: 4=ADDI, 11=LW, 15=SW, 8=BEQ
+        else if(opcode2 == 4 || opcode2 == 11 || opcode2 == 15 || opcode2 == 8){
+ 
+            char rs1[4], rt1[4], imediato1[7];
+ 
+            strncpy(rs1,       instr+4,  3); rs1[3]       = '\0';
+            strncpy(rt1,       instr+7,  3); rt1[3]       = '\0';
+            strncpy(imediato1, instr+10, 6); imediato1[6] = '\0';
+ 
+            int rs2       = binario_para_int(rs1);
+            int rt2       = binario_para_int(rt1);
+            int imediato2 = binario_para_int(imediato1);
+ 
+            if(opcode2 == 4)
+                fprintf(f, "addi $t%d, $t%d, %d\n", rt2, rs2, imediato2);
+            else if(opcode2 == 11)
+                fprintf(f, "lw $t%d, %d($t%d)\n",   rt2, imediato2, rs2);
+            else if(opcode2 == 15)
+                fprintf(f, "sw $t%d, %d($t%d)\n",   rt2, imediato2, rs2);
+            else if(opcode2 == 8)
+                fprintf(f, "beq $t%d, $t%d, %d\n",  rs2, rt2, imediato2);
+        }
+ 
+        // -------- TIPO J --------
+        // opcode 0010 (2): JUMP
+        else if(opcode2 == 2){
+ 
+            char addr_s[13];
+            strncpy(addr_s, instr+4, 12);
+            addr_s[12] = '\0';
+ 
+            // endereço positivo (sem complemento de 2)
+            int addr = 0;
+            for(int j = 0; j < 12; j++){
+                addr = addr * 2 + (addr_s[j] == '1' ? 1 : 0);
+            }
+ 
+            fprintf(f, "j %d\n", addr);
+        }
+ 
+        else{
+            fprintf(f, "instrucao_invalida\n");
+        }
+    }
+ 
+    fclose(f);
+}
+ 
+ 
+ 
+ 
+void salvar_dat(int memdados[], int tamanho){
+ 
+    char nome_arquivo[100];
+ 
+    printf("digite o nome do arquivo de saida de dados (ex: dados.dat): \n");
+    getchar();
+    fgets(nome_arquivo, sizeof(nome_arquivo), stdin);
+    nome_arquivo[strcspn(nome_arquivo, "\n")] = '\0';
+ 
+ 
+    FILE *f = fopen(nome_arquivo, "w");
+ 
+    for(int i = 0; i < tamanho; i++){
+        fprintf(f, "%d\n", memdados[i]);
+    }
+ 
+    fclose(f);
+}
+ 
+ 
+ 
+ 
+void imprimir_tudo(struct memoria_instrucao mem[], int qtd_instr, int memdados[], int reg[], int pc){
+ 
+    printf("\n.. ESTADO DO SIMULADOR ..n");
+ 
+    printf("\nPC = %d\n", pc);
+ 
+    printf("\n.. REGISTRADORES ..\n");
+    for(int i=0; i<8; i++)
+        printf("R%d = %d\n", i, reg[i]);
+ 
+    printf("\n---- MEMORIA DE INSTRUCOES ----\n");
+    for(int i=0; i<qtd_instr; i++)
+        printf("%d: %s\n", i, mem[i].bits);
+ 
+    printf("\n---- MEMORIA DE DADOS ----\n");
+    for(int i=0; i<256; i++)
+        printf("%d: %d\n", i, memdados[i]);
+}
 
 
+
+void inserir_registrador(int reg[]){
+    int r, valor;
+
+    printf("\nDigite o registrador (0 a 7): ");
+    scanf("%d", &r);
+
+    if(r < 0 || r > 7){
+        printf("Registrador invalido!\n");
+        return;
+    }
+
+    printf("Digite o valor para R%d: ", r);
+    scanf("%d", &valor);
+
+    reg[r] = valor;
+
+    printf("R%d agora = %d\n", r, reg[r]);
+}
+
+
+
+void inserir_memoria(int memdados[]){
+    int endereco, valor;
+
+    printf("\nDigite o endereco da memoria (0 a 255): ");
+    scanf("%d", &endereco);
+
+    if(endereco < 0 || endereco > 255){
+        printf("Endereco invalido!\n");
+        return;
+    }
+
+    printf("Digite o valor para MEM[%d]: ", endereco);
+    scanf("%d", &valor);
+
+    memdados[endereco] = valor;
+
+    printf("MEM[%d] agora = %d\n", endereco, memdados[endereco]);
 }
