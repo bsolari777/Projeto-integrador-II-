@@ -18,22 +18,14 @@ struct estado{
     int memdados[256]; 
     int pc;            
 };
-
-// Struct para armazenar o estado da ULA
-
-struct resultado_ula {
-    int resultado;
-    int zero;
-    int overflow;
-    int negativo;
-};
+ 
  
 // assinatura das funções a serem utilizadas no código
 void executarinstrucao(struct memoria_instrucao mem[], int contador, int reg[], int memdados[], int *pc);
 void executarstep(struct memoria_instrucao mem[], int qtd_instr, int reg[], int memdados[], int *pc, struct estado historico[], int *topo);
 void executarback(int reg[], int memdados[], int *pc, struct estado historico[], int *topo);
 int binario_para_int(char *bits);
-void ULA(int funct, int a, int b, struct resultado_ula *r);
+int ULA(int op, int a, int b);
 void carregar_mem_instr(struct memoria_instrucao mem[], int *qtd_instr);
 void carregar_mem_dados(struct memoria_dados data[], int *qtd_dados);
 void imprimir_memorias(struct memoria_instrucao mem[], struct memoria_dados data[], int qtd_instr, int qtd_dados);
@@ -49,13 +41,13 @@ int main(){
     struct memoria_instrucao mem[256]; // Memória de instruções
     struct memoria_dados data[256];    // Memória de dados
  
-    int reg[8] = {0}; 
+    int reg[8] = {10,10,10,10,10,10,10,10}; 
     int memdados[256] = {0};                
  
-    struct estado historico[256]; 
+    struct estado historico[1000]; 
     int topo = -1;                  
  
-    int pc = 0,pc_executar;          // Program counter inicial
+    int pc = 0;          // Program counter inicial
     int qtd_instr = 0;   // Quantidade de instruções carregadas
     int qtd_dados = 0;   // Quantidade de dados carregados
     int opcao;           // Opção do menu
@@ -86,9 +78,6 @@ int main(){
             
             case 2: 
                 carregar_mem_dados(data, &qtd_dados); // Carrega dados
-                for(int i = 0; i < qtd_dados; i++){
-                memdados[i] = binario_para_int(data[i].dados);
-                }
                 break;
             
             case 3:
@@ -114,8 +103,7 @@ int main(){
 			break;
  
             case 8:
-                pc_executar = pc - pc;
-                executarinstrucao(mem, 256, reg, memdados, &pc_executar); // Executa programa todo
+                executarinstrucao(mem, 256, reg, memdados, &pc); // Executa programa todo
                 break;
  
             case 9:
@@ -147,18 +135,11 @@ int main(){
  
 void executarinstrucao(struct memoria_instrucao mem[], int contador, int reg[], int memdados[], int *pc){
  
-    struct resultado_ula r;
- 
     while(*pc < contador){ 
  
         char *instr = mem[*pc].bits;  
-        
-        if(strcmp(instr, "0") == 0){
-            (*pc)++;
-            continue;
-        }        
-        
         char opcode1[5];
+        
         strncpy(opcode1, instr, 4); 
         opcode1[4] = '\0';
         
@@ -190,11 +171,7 @@ void executarinstrucao(struct memoria_instrucao mem[], int contador, int reg[], 
             else if(funct2 == 5) ula_op = 3; // OR
             else                 ula_op = 0; // default
  
-
-            ULA(ula_op, reg[rs2], reg[rt2], &r);
-            reg[rd2] = r.resultado;
-        
-            
+            reg[rd2] = ULA(ula_op, reg[rs2], reg[rt2]); 
         }
  
         // -------- TIPO I --------
@@ -203,49 +180,38 @@ void executarinstrucao(struct memoria_instrucao mem[], int contador, int reg[], 
         //   1011 (11) = LW
         //   1111 (15) = SW
         //   1000 (8)  = BEQ
-      else if(opcode2 == 4 || opcode2 == 11 || opcode2 == 15 || opcode2 == 8){
-
-    char rs1[4], rt1[4], imediato1[7];
-
-    strncpy(rs1, instr+4, 3); rs1[3] = '\0';
-    strncpy(rt1, instr+7, 3); rt1[3] = '\0';
-    strncpy(imediato1, instr+10, 6); imediato1[6] = '\0';
-
-    int rs2 = binario_para_int(rs1);
-    int rt2 = binario_para_int(rt1);
-    int imediato2 = binario_para_int(imediato1);
-
-    int addr;
-
-    if(opcode2 == 4){
-        ULA(0, reg[rs2], imediato2, &r);
-        reg[rt2] = r.resultado;
-    }
-
-    else if(opcode2 == 11){
-        ULA(0, reg[rs2], imediato2, &r);
-        addr = r.resultado;
-
-        if(addr >= 0 && addr < 256)
-            reg[rt2] = memdados[addr];
-    }
-
-    else if(opcode2 == 15){
-        ULA(0, reg[rs2], imediato2, &r);
-        addr = r.resultado;
-
-        if(addr >= 0 && addr < 256)
-            memdados[addr] = reg[rt2];
-    }
-
-    else if(opcode2 == 8){
-        ULA(1, reg[rs2], reg[rt2], &r);
-
-        if(r.zero == 1){
-            *pc = *pc + imediato2 - 1;
+        else if(opcode2 == 4 || opcode2 == 11 || opcode2 == 15 || opcode2 == 8){
+            char rs1[4], rt1[4], imediato1[7];
+ 
+            strncpy(rs1,      instr+4,  3); rs1[3]      = '\0';
+            strncpy(rt1,      instr+7,  3); rt1[3]      = '\0';
+            strncpy(imediato1, instr+10, 6); imediato1[6] = '\0';
+ 
+            int rs2      = binario_para_int(rs1);
+            int rt2      = binario_para_int(rt1);
+            int imediato2 = binario_para_int(imediato1); // já trata complemento de 2
+ 
+            if(opcode2 == 4){
+                // ADDI: rt = rs + imm  — passa pela ULA (operação de soma)
+                reg[rt2] = ULA(0, reg[rs2], imediato2);
+            }
+            else if(opcode2 == 11){
+                // LW: rt = Mem[rs + imm]
+                reg[rt2] = memdados[ULA(0, reg[rs2], imediato2)];
+            }
+            else if(opcode2 == 15){
+                // SW: Mem[rs + imm] = rt
+                memdados[ULA(0, reg[rs2], imediato2)] = reg[rt2];
+            }
+            else if(opcode2 == 8){
+                // BEQ: if (rs == rt) PC = PC + imm + 1
+                // A ULA faz a subtração para verificar se são iguais (resultado == 0)
+                int ula_result = ULA(1, reg[rs2], reg[rt2]); // subtração
+                if(ula_result == 0){
+                    *pc = *pc + imediato2; // +1 será feito pelo (*pc)++ no final
+                }
+            }
         }
-    }
-}
  
         // -------- TIPO J --------
         // opcode 0010 (2) = JUMP
@@ -321,41 +287,14 @@ void executarback(int reg[], int memdados[], int *pc, struct estado historico[],
 }
  
 // ----------- ULA -----------
-void ULA(int funct, int a, int b, struct resultado_ula *r){
-
-    int resultado;
-
+int ULA(int funct, int a, int b){
     switch(funct){
-        case 0:
-            resultado = a + b;
-            r->overflow = ((a > 0 && b > 0 && resultado < 0) ||
-                           (a < 0 && b < 0 && resultado > 0));
-            break;
-
-        case 1:
-            resultado = a - b;
-            r->overflow = ((a > 0 && b < 0 && resultado < 0) ||
-                           (a < 0 && b > 0 && resultado > 0));
-            break;
-
-        case 2:
-            resultado = a & b;
-            r->overflow = 0;
-            break;
-
-        case 3:
-            resultado = a | b;
-            r->overflow = 0;
-            break;
-
-        default:
-            resultado = 0;
-            r->overflow = 0;
+        case 0: return a + b; // soma
+        case 1: return a - b; // subtração
+        case 2: return a & b; // AND
+        case 3: return a | b; // OR
+        default: return 0;    // default
     }
-
-    r->resultado = resultado;
-    r->zero = (resultado == 0);
-    r->negativo = (resultado < 0);
 }
  
 int binario_para_int(char *bits){
