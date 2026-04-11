@@ -49,10 +49,10 @@ int main(){
     struct memoria_instrucao mem[256]; // Memória de instruções
     struct memoria_dados data[256];    // Memória de dados
  
-    int reg[8] = {10,10,10,10,10,10,10,10}; 
+    int reg[8] = {0}; 
     int memdados[256] = {0};                
  
-    struct estado historico[1000]; 
+    struct estado historico[256]; 
     int topo = -1;                  
  
     int pc = 0,pc_executar;          // Program counter inicial
