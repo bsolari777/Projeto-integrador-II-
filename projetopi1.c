@@ -215,21 +215,23 @@ void executarinstrucao(struct memoria_instrucao mem[], int contador, int reg[], 
  
         // -------- TIPO J --------
         // opcode 0010 (2) = JUMP
-        else if(opcode2 == 2){
-            char addr_s[13];
-            strncpy(addr_s, instr+4, 12); // 12 bits de endereço
-            addr_s[12] = '\0';
- 
-            // Para Jump, o endereço é sempre positivo (0-255)
-            // usamos conversão sem sinal (os 8 bits menos significativos)
-            int addr = 0;
-            int tamanho = strlen(addr_s);
-            for(int i = 0; i < tamanho; i++){
-                addr = addr * 2 + (addr_s[i] == '1' ? 1 : 0);
-            }
- 
-            *pc = addr - 1; // -1 porque o (*pc)++ vai incrementar depois
-        }
+        else if(opcode2 == 8){
+
+    char addr_s[13];
+
+    // pega os 12 bits do endereço
+    strncpy(addr_s, instr + 4, 12);
+    addr_s[12] = '\0';
+
+    // converte para inteiro (SEM sinal)
+    int addr = 0;
+    for(int i = 0; i < 12; i++){
+        addr = addr * 2 + (addr_s[i] == '1');
+    }
+
+    // atualiza o PC (ajuste do incremento automático)
+    *pc = addr - 1;
+		}
  
         else {
             printf("instrucao invalida! opcode = %d\n", opcode2); 
