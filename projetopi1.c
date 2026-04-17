@@ -331,80 +331,57 @@ int ULA(int op, int a, int b, struct flags *f){
     int resultado_real;
     int resultado;
     int overflow = 0;
-
-
+	
     // OPERAÇÕES
-
     if(op == 0){ // ADD
         resultado_real = a + b;
 
         if(a > 0 && b > 0 && resultado_real < 0){
             overflow = 1;
-        }
-        else if(a < 0 && b < 0 && resultado_real > 0){
+        }else if(a < 0 && b < 0 && resultado_real > 0){
             overflow = 1;
-        }
-        else{
+        }else{
             overflow = 0;
         }
-    }
-
-    else if(op == 1){ // SUB
+    }else if(op == 1){ // SUB
         resultado_real = a - b;
 
         if(a > 0 && b < 0 && resultado_real < 0){
             overflow = 1;
-        }
-        else if(a < 0 && b > 0 && resultado_real > 0){
+        }else if(a < 0 && b > 0 && resultado_real > 0){
             overflow = 1;
-        }
-        else{
+        }else{
             overflow = 0;
         }
-    }
-
-    else if(op == 2){ // AND
+    }else if(op == 2){ // AND
         resultado_real = a & b;
         overflow = 0;
-    }
-
-    else if(op == 3){ // OR
+    }else if(op == 3){ // OR
         resultado_real = a | b;
         overflow = 0;
-    }
-
-    else{
+    }else{
         resultado_real = 0;
         overflow = 0;
     }
-
-
-    // MÁSCARA 16 BITS
-
+	// MÁSCARA 16 BITS
     resultado = resultado_real & 0xFFFF;
 
-
     // AJUSTE DE SINAL
-
     if(resultado & 0x8000){
         resultado = resultado - 0x10000;
     }
-
-
+	
     // FLAGS
-
     if(resultado == 0){
         f->zero = 1;
-    } else {
+    }else{
         f->zero = 0;
     }
-
     if(resultado < 0){
         f->negativo = 1;
-    } else {
+    }else{
         f->negativo = 0;
     }
-
     f->overflow = overflow;
 
     return resultado;
