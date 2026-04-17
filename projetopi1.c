@@ -109,7 +109,7 @@ int main(){
 			break;
  
             case 8:
-                executarinstrucao(mem, 256, reg, memdados, &pc,  &historico, &topo, &capacidade); // Executa programa todo
+                executarinstrucao(mem, qtd_instr, reg, memdados, &pc,  &historico, &topo, &capacidade); // Executa programa todo
                 break;
  
             case 9:
@@ -239,12 +239,10 @@ void executarinstrucao(struct memoria_instrucao mem[],
                 if(f.zero == 1){ // se a flag de zero for == 1 ( verdadeira ) realiza o branch
                     *pc = *pc + imediato2; // +1 será feito pelo (*pc)++ no final
                 }
-            }
-            
+            }  
             rs2 = 0;
             rt2 = 0;
-            imediato2 = 0;            
-            
+            imediato2 = 0;              
         }
  
         // -------- TIPO J --------
