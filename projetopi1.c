@@ -562,11 +562,10 @@ void salvar_asm(struct memoria_instrucao mem[], int qtd_instr){
             else if(opcode2 == 8)
                 fprintf(f, "beq $r%d, $r%d, %d\n",  rs2, rt2, imediato2);
         }
- 
+			
         // -------- TIPO J --------
         // opcode 0010 (2): JUMP
         else if(opcode2 == 2){
- 
             char addr_s[13];
             strncpy(addr_s, instr+4, 12);
             addr_s[12] = '\0';
@@ -576,15 +575,11 @@ void salvar_asm(struct memoria_instrucao mem[], int qtd_instr){
             for(int j = 0; j < 12; j++){
                 addr = addr * 2 + (addr_s[j] == '1' ? 1 : 0);
             }
- 
             fprintf(f, "j %d\n", addr);
-        }
- 
-        else{
+		}else{
             fprintf(f, "instrucao_invalida\n");
         }
     }
- 
     fclose(f);
 }
  
@@ -600,13 +595,11 @@ void salvar_dat(int memdados[], int tamanho){
     fgets(nome_arquivo, sizeof(nome_arquivo), stdin);
     nome_arquivo[strcspn(nome_arquivo, "\n")] = '\0';
  
- 
     FILE *f = fopen(nome_arquivo, "w");
  
     for(int i = 0; i < tamanho; i++){
         fprintf(f, "%d\n", memdados[i]);
     }
- 
     fclose(f);
 }
  
