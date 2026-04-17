@@ -280,11 +280,9 @@ void executarstep(struct memoria_instrucao mem[], int qtd_instr,
                 int reg[], int memdados[],
                 int *pc, struct estado **historico, int *topo, int *capacidade){
  
- 
     if(*topo >= *capacidade - 1){
              aumentar_historico(historico, capacidade);
     }
- 
          (*topo)++;
 
          (*historico)[*topo].pc = *pc;
@@ -294,8 +292,9 @@ void executarstep(struct memoria_instrucao mem[], int qtd_instr,
 
     for(int i = 0; i < 256; i++)
          (*historico)[*topo].memdados[i] = memdados[i];
- 
-    executarinstrucao(mem, *pc + 1, reg, memdados, pc, historico, topo, capacidade); // Executa próxima instrução
+	
+ 	// Executa próxima instrução
+    executarinstrucao(mem, *pc + 1, reg, memdados, pc, historico, topo, capacidade);
 }
  
 // 			voltar instrucao executada 
