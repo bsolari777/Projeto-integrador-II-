@@ -268,13 +268,9 @@ void executarinstrucao(struct memoria_instrucao mem[],
                     // se for '0', não soma nada
                  }
             *pc = addr - 1; // -1 porque o (*pc)++ vai incrementar depois
-        
-        }
- 
-        else {
+        }else {
             printf("instrucao invalida! opcode = %d\n", opcode2); 
         }
- 
         (*pc)++; 
         
         printf("PC: %d\n",*pc);
